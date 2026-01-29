@@ -1,0 +1,9 @@
+[project]
+name = "HiddenMarkovModels"
+version = "0.1"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
