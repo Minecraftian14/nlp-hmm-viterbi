@@ -25,6 +25,13 @@ def test_exhaustive_algorithm():
     assert model.predict(['ti', 'nek', 'pul', 'fi']) == ('A', 'B', 'C', 'D')
 
 
+def test_viterbi_algorithm():
+    model = HiddenMarkovModel(synthetic_corpus)
+
+    assert model.algorithm == 'viterbi'
+    assert model.predict(['ti', 'nek', 'pul', 'fi']) == ('A', 'B', 'C', 'D')
+
+
 def test_unknown_handling():
     model = HiddenMarkovModel(big_synthetic_corpus, algorithm='exhaustive')
 
@@ -32,8 +39,8 @@ def test_unknown_handling():
     assert model.predict(['zo', 'glorp', 'pul', 'fi']) == ('A', 'B', 'C', 'D')
 
 
-def test_viterbi_algorithm():
-    model = HiddenMarkovModel(synthetic_corpus)
+def test_scoring():
+    model = HiddenMarkovModel(synthetic_corpus, algorithm='exhaustive')
 
-    assert model.algorithm == 'viterbi'
-    assert model.predict(['ti', 'nek', 'pul', 'fi']) == ('A', 'B', 'C', 'D')
+    assert model.score([('ti', 'A'), ('nek', 'B'), ('pul', 'C'), ('fi', 'D')]) == 1.0
+    assert model.score([('ti', 'A'), ('nek', 'B'), ('pul', 'C'), ('fi', 'A')]) == 0.75

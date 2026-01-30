@@ -7,7 +7,7 @@ class HiddenMarkovModel:
 
     def __init__(self, sentences, algorithm='viterbi'):
         """
-        :param sentences: array of (word, pos) pairs
+        :param sentences: list of (word, pos) pairs
         :param algorithm: 'exhaustive' or 'viterbi'
         """
 
@@ -62,6 +62,10 @@ class HiddenMarkovModel:
         self.emission_probabilities[np.isnan(self.emission_probabilities)] = 1 / self.emission_probabilities.shape[1]
 
     def predict(self, sentence):
+        """
+        :param sentence: list of words
+        :return: list of pos tags
+        """
         if self.algorithm == "exhaustive":
             return self._exhaustive(sentence)
         elif self.algorithm == "viterbi":
@@ -103,3 +107,19 @@ class HiddenMarkovModel:
 
     def _viterbi(self, sentence):
         ...
+
+    def score(self, sentences):
+        """
+        :param sentence_data: A single sentence or a list of sentences, each sentence is a list of (word, pos) pairs
+        :return: accuracy
+        """
+        if not isinstance(sentences[0], list): sentences = [sentences]
+        total_correct = 0
+        total_interactions = 0
+        for sentence in sentences:
+            words = [word for word, pos in sentence]
+            truth = [pos for word, pos in sentence]
+            prediction = self.predict(words)
+            total_correct += sum([1 if t == p else 0 for t, p in zip(truth, prediction)])
+            total_interactions = len(sentence)
+        return total_correct / total_interactions
