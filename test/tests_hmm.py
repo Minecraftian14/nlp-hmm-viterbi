@@ -1,4 +1,5 @@
-from hmm_viterbi import HiddenMarkovModel
+import numpy as np
+from hmm_viterbi import HiddenMarkovModel, macro_accuracy_score
 
 from dummy_data import synthetic_corpus, big_synthetic_corpus
 
@@ -14,9 +15,9 @@ def test_model_sanity():
     assert model.n_observations == 8
     assert model.n_hidden_states == 4
 
-    assert model.initial_probabilities.sum() == 1.0
-    assert (model.transition_probabilities.sum(axis=1) == 1.0).all()
-    assert (model.emission_probabilities.sum(axis=1) == 1.0).all()
+    assert np.isclose(model.initial_probabilities.sum(), 1.0)
+    assert (np.isclose(model.transition_probabilities.sum(axis=1), 1.0)).all()
+    assert (np.isclose(model.emission_probabilities.sum(axis=1), 1.0)).all()
 
 
 def test_exhaustive_algorithm():
@@ -44,3 +45,4 @@ def test_scoring():
 
     assert model.score([('ti', 'A'), ('nek', 'B'), ('pul', 'C'), ('fi', 'D')]) == 1.0
     assert model.score([('ti', 'A'), ('nek', 'B'), ('pul', 'C'), ('fi', 'A')]) == 0.75
+    assert model.score([('ti', 'A'), ('nek', 'B'), ('pul', 'C'), ('fi', 'A')], scorer=macro_accuracy_score) == 5 / 6
