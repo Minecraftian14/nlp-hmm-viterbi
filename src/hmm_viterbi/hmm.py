@@ -11,7 +11,7 @@ def smoothen(matrix, smoothing):
 
 class HiddenMarkovModel:
 
-    def __init__(self, sentences, algorithm='viterbi', smoothing=0.01):
+    def __init__(self, sentences, algorithm='viterbi', smoothing=0.01, rarity_factor=0.05):
         """
         :param sentences: list of (word, pos) pairs
         :param algorithm: 'exhaustive' or 'viterbi'
@@ -24,7 +24,7 @@ class HiddenMarkovModel:
         counter = cls.Counter([word for word, _ in list_of_all_pairs])
         threshold_rank = max(
             # Any values that occur less than 5% in the corpus
-            len([x for x in counter.values() if x < counter.most_common()[0][1] * 0.05]),
+            len([x for x in counter.values() if np.log(x) < np.log(counter.most_common()[0][1]) * rarity_factor]),
             # At least pick up some words
             int(len(counter) ** 0.5)
         )
