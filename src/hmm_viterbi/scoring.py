@@ -1,3 +1,6 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
 def micro_accuracy_score(y_true, y_pred):
     return sum(t == p for t, p in zip(y_true, y_pred)) / len(y_true)
 
@@ -41,3 +44,38 @@ def display_confusion_matrix(matrix):
         for p in keys:
             print(f'{matrix[t][p]:>{width}}', end='')
         print()
+
+
+def display_confusion_matrix_heatmap(matrix, normalize=True, title="Confusion Matrix"):
+    tags = sorted(matrix.keys())
+
+    cm = np.array([[matrix[t][p] for p in tags] for t in tags], dtype=float)
+
+    if normalize:
+        cm = cm / cm.sum(axis=1, keepdims=True)
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    im = ax.imshow(cm, cmap="Blues")
+
+    ax.set_xticks(np.arange(len(tags)))
+    ax.set_yticks(np.arange(len(tags)))
+    ax.set_xticklabels(tags)
+    ax.set_yticklabels(tags)
+
+    plt.xticks(rotation=45)
+
+    for i in range(len(tags)):
+        for j in range(len(tags)):
+            val = cm[i, j]
+            text = f"{val:.2f}" if normalize else int(val)
+            ax.text(j, i, text, ha="center", va="center", fontsize=8)
+
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("True")
+    ax.set_title(title)
+
+    plt.colorbar(im)
+    plt.tight_layout()
+    plt.show()
+
