@@ -1,7 +1,10 @@
 import numpy as np
-from hmm_viterbi import HiddenMarkovModel, macro_accuracy_score
+# from hmm_viterbi import HiddenMarkovModel, macro_accuracy_score
 
 from dummy_data import synthetic_corpus, big_synthetic_corpus
+
+from hmm_viterbi.hmm import HiddenMarkovModel
+from hmm_viterbi.scoring import macro_accuracy_score
 
 
 def test_model_sanity():
