@@ -116,7 +116,48 @@ class HiddenMarkovModel:
         return tuple(self.idx_to_pos[idx] for idx in best_combination)
 
     def _viterbi(self, sentence):
-        ...
+        sentence = [word if word in self.unique_words else "UNKNOWN" for word in sentence]
+
+        T = len(sentence)  # total no. of words in the sentence
+        S = self.n_hidden_states  # total no. of hidden states or the PoS tags
+
+        if T == 0:
+            return ()
+
+        dp = np.full((T,S), -np.inf)
+        backpointer = np.zeros((T,S), dtype=int)
+
+        log_init = np.log(self.initial_probabilities)
+        log_trans = np.log(self.transition_probabilities)
+        log_emit = np.log(self.emission_probabilities)
+
+        first_word_idx = self.word_to_idx[sentence[0]]
+
+        for s in range(S):
+            dp[0, s] = log_init[s] + log_emit[s, first_word_idx]
+
+        for t in range(1, T):
+            word_idx = self.word_to_idx[sentence[t]]
+
+            scores = dp[t-1][:, None] + log_trans
+
+            best_prev = np.argmax(scores, axis=0)
+
+            dp[t] = scores[best_prev, range(S)] + log_emit[:, word_idx]
+
+            backpointer[t] = best_prev
+
+        best_last = np.argmax(dp[T-1])
+
+        best_path = [best_last]
+
+        for t in range(T-1, 0, -1):
+            best_last = backpointer[t, best_last]
+            best_path.append(best_last)
+        
+        best_path.reverse()
+
+        return tuple(self.idx_to_pos[idx] for idx in best_path)
 
     def score(self, sentences, scorer=micro_accuracy_score):
         """
