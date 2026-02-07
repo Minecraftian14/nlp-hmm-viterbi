@@ -5,50 +5,122 @@ import collections as cls
 from .scoring import micro_accuracy_score
 
 
+def simple_unknown_imputer(data, knowledge: set[str], insight: any = None):
+    if isinstance(data, str):  # is a word
+        return data if data in knowledge else "<UNKNOWN>"
+    if isinstance(data, tuple):  # is a pair
+        return data[0] if data[0] in knowledge else "<UNKNOWN>", data[1]
+    if isinstance(data, list):
+        return [simple_unknown_imputer(x, knowledge) for x in data]
+    raise ValueError("Unknown data type: " + str(type(data)))
+
+
+def extensive_unknown_imputer(data, knowledge: set[str], insight: 'HiddenMarkovModel' = None):
+    if isinstance(data, str):  # is a word
+        return data if data in knowledge else f"<UNKNOWN>"
+    if isinstance(data, tuple):  # is a pair
+        return data[0] if data[0] in knowledge else f"<UNKNOWN:{data[1]}>", data[1]
+    if isinstance(data, list):
+        data = [extensive_unknown_imputer(x, knowledge, insight) for x in data]
+
+        if isinstance(data[0], str):  # is a word
+
+            if data[0] == "<UNKNOWN>":
+                first_pos = insight.initial_probabilities.argmax()
+                data[0] = f"<UNKNOWN:{insight.idx_to_pos[first_pos]}>"
+
+            first = data[0]
+            for index, second in enumerate(data[1:]):
+                if second == "<UNKNOWN>":
+                    # Based on the first word, what's the most likely POS is it itself?
+                    likely_pos = insight.emission_probabilities[:, insight.word_to_idx[first]].argmax()
+                    # Based on the first pos, what's the most likely POS is second itself?
+                    likely_pos = insight.transition_probabilities[likely_pos, :].argmax()
+
+                    data[index + 1] = second = f"<UNKNOWN:{insight.idx_to_pos[likely_pos]}>"
+
+                first = second
+
+        return data
+    raise ValueError("Unknown data type: " + str(type(data)))
+
+
 def smoothen(matrix, smoothing):
     return matrix * (1 - smoothing) + smoothing / matrix.shape[-1]
 
 
 class HiddenMarkovModel:
 
-    def __init__(self, sentences, algorithm='viterbi', smoothing=0.01, rarity_factor=0.05):
+    def __init__(self,
+                 sentences: list[list[tuple[str, str]]],
+                 algorithm: str = 'viterbi',
+                 smoothing: float = 0.01,
+                 rarity_factor: float = 0.05,
+                 imputer=simple_unknown_imputer
+                 ):
         """
-        :param sentences: list of (word, pos) pairs
+        :param sentences: List of (word, pos) pairs
         :param algorithm: 'exhaustive' or 'viterbi'
+        :param smoothing: Smoothing parameter (interpolation between actual and uniform probabilities). 1 means use actual probabilities; 0 means use uniform probabilities.
+        :param rarity_factor: Threshold for rarity of words in the corpus. 0 means all words retained; 1 means all words discarded. There is a hard constraint to retain at least len(counter)**0.5 words.
         """
+
+        assert len(sentences) > 0, ""
+        assert algorithm in ['exhaustive', 'viterbi'], ""
+        assert 0 <= smoothing < 1, ""
+        assert 0 <= rarity_factor <= 1, ""
 
         self.algorithm = algorithm
         self.smoothing = smoothing
+        self.rarity_factor = rarity_factor
+        self.imputer = imputer
 
+        # Flatten the list for easier processing
         list_of_all_pairs = [pair for line in sentences for pair in line]
-        counter = cls.Counter([word for word, _ in list_of_all_pairs])
-        threshold_rank = max(
-            # Any values that occur less than 5% in the corpus
-            len([x for x in counter.values() if np.log(x) < np.log(counter.most_common()[0][1]) * rarity_factor]),
-            # At least pick up some words
-            int(len(counter) ** 0.5)
-        )
-        knowledge = {word for word, freq in counter.most_common()[:(1 + len(counter) - threshold_rank)]}
-        list_of_all_pairs = [
-            ((word, pos) if word in knowledge else ("UNKNOWN", pos))
-            for word, pos in list_of_all_pairs]
-        sentences = [
-            [
-                ((word, pos) if word in knowledge else ("UNKNOWN", pos))
-                for (word, pos) in sentence]
-            for sentence in sentences]
 
+        # Create a counter for calculating the frequencies
+        counter = cls.Counter([word for word, _ in list_of_all_pairs])
+        # Pre-Calculate the Offset Log of the most common frequency for filtering
+        max_frequency_factor = np.log(counter.most_common()[0][1] + 1) * rarity_factor
+        # Calculate a retention factor to keep only the most common words:
+        #   Either keep 100*rarity_factor% of the most common words by logscale
+        #   Or at least len(all words) ** 0.5
+        threshold_rank = min(
+            # Any values that occur less than 100rarity_factor% in the corpus
+            len([x for x in counter.values() if np.log(x + 1) <= max_frequency_factor]),
+            # At least pick up some words
+            int(len(counter) - len(counter) ** 0.5)
+        )
+        # Use the retention factor to filter out rare words
+        self.knowledge = {word for word, freq in counter.most_common()[:(len(counter) - threshold_rank)]}
+
+        # Replace excluded words with "UNKNOWN"
+        # list_of_all_pairs = [
+        #     ((word, pos) if word in knowledge else ("UNKNOWN", pos))
+        #     for word, pos in list_of_all_pairs]
+        list_of_all_pairs = imputer(list_of_all_pairs, self.knowledge)
+
+        # sentences = [
+        #     [
+        #         ((word, pos) if word in knowledge else ("UNKNOWN", pos))
+        #         for (word, pos) in sentence]
+        #     for sentence in sentences]
+        sentences = imputer(sentences, self.knowledge)
+
+        # Finalize the HMM architecture
+        # *knowledge is what words were known and unique_words is all known words + unknown placeholders*
         self.unique_words = sorted(list({word for word, pos in list_of_all_pairs}))
         self.unique_pos = sorted(list({pos for word, pos in list_of_all_pairs}))
+        self.n_observations = len(self.unique_words)
+        self.n_hidden_states = len(self.unique_pos)
 
+        # Create some helpers for index<->token conversion
         self.pos_to_idx = {pos: idx for idx, pos in enumerate(self.unique_pos)}
         self.word_to_idx = {word: idx for idx, word in enumerate(self.unique_words)}
         self.idx_to_pos = {v: k for k, v in self.pos_to_idx.items()}
         self.idx_to_word = {v: k for k, v in self.word_to_idx.items()}
 
-        self.n_observations = len(self.unique_words)
-        self.n_hidden_states = len(self.unique_pos)
-
+        # Calculate the initial probabilities
         self.initial_probabilities = np.zeros(self.n_hidden_states)
         for line in sentences:
             first_pair = line[0]
@@ -56,6 +128,7 @@ class HiddenMarkovModel:
         self.initial_probabilities /= self.initial_probabilities.sum()
         self.initial_probabilities = smoothen(self.initial_probabilities, smoothing)
 
+        # Calculate the transition probabilities
         self.transition_probabilities = np.zeros((self.n_hidden_states, self.n_hidden_states))
         for line in sentences:
             for first, second in zip(line[:-1], line[1:]):
@@ -64,6 +137,7 @@ class HiddenMarkovModel:
         self.transition_probabilities[np.isnan(self.transition_probabilities)] = 1 / self.transition_probabilities.shape[1]
         self.transition_probabilities = smoothen(self.transition_probabilities, smoothing)
 
+        # Calculate the emission probabilities
         self.emission_probabilities = np.zeros((self.n_hidden_states, self.n_observations))
         for pair in list_of_all_pairs:
             self.emission_probabilities[self.pos_to_idx[pair[1]], self.word_to_idx[pair[0]]] += 1
@@ -76,6 +150,8 @@ class HiddenMarkovModel:
         :param sentence: list of words
         :return: list of pos tags
         """
+        sentence = self.imputer(sentence, self.knowledge, self)
+
         if self.algorithm == "exhaustive":
             return self._exhaustive(sentence)
         elif self.algorithm == "viterbi":
@@ -83,8 +159,6 @@ class HiddenMarkovModel:
         raise ValueError("Unknown algorithm: " + self.algorithm)
 
     def _exhaustive(self, sentence):
-
-        sentence = [word if word in self.unique_words else "UNKNOWN" for word in sentence]
 
         pos_ids = self.idx_to_pos.keys()
 
@@ -116,7 +190,6 @@ class HiddenMarkovModel:
         return tuple(self.idx_to_pos[idx] for idx in best_combination)
 
     def _viterbi(self, sentence):
-        sentence = [word if word in self.unique_words else "UNKNOWN" for word in sentence]
 
         T = len(sentence)  # total no. of words in the sentence
         S = self.n_hidden_states  # total no. of hidden states or the PoS tags
@@ -124,8 +197,8 @@ class HiddenMarkovModel:
         if T == 0:
             return ()
 
-        dp = np.full((T,S), -np.inf)
-        backpointer = np.zeros((T,S), dtype=int)
+        dp = np.full((T, S), -np.inf)
+        backpointer = np.zeros((T, S), dtype=int)
 
         log_init = np.log(self.initial_probabilities)
         log_trans = np.log(self.transition_probabilities)
@@ -139,7 +212,7 @@ class HiddenMarkovModel:
         for t in range(1, T):
             word_idx = self.word_to_idx[sentence[t]]
 
-            scores = dp[t-1][:, None] + log_trans
+            scores = dp[t - 1][:, None] + log_trans
 
             best_prev = np.argmax(scores, axis=0)
 
@@ -147,14 +220,14 @@ class HiddenMarkovModel:
 
             backpointer[t] = best_prev
 
-        best_last = np.argmax(dp[T-1])
+        best_last = np.argmax(dp[T - 1])
 
         best_path = [best_last]
 
-        for t in range(T-1, 0, -1):
+        for t in range(T - 1, 0, -1):
             best_last = backpointer[t, best_last]
             best_path.append(best_last)
-        
+
         best_path.reverse()
 
         return tuple(self.idx_to_pos[idx] for idx in best_path)

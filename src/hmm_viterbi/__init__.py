@@ -1,4 +1,4 @@
-from .hmm import HiddenMarkovModel
+from .hmm import *
 from .scoring import *
 
 __all__ = [
@@ -7,4 +7,6 @@ __all__ = [
     'macro_accuracy_score',
     'confusion_matrix',
     'display_confusion_matrix',
+    'simple_unknown_imputer',
+    'extensive_unknown_imputer'
 ]

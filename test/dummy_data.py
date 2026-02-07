@@ -1,3 +1,7 @@
+def count_unique_words(corpus: list[list[tuple[str, str]]]):
+    return len({word for sentence in corpus for word, pos in sentence})
+
+
 synthetic_corpus = [
     [("ka", "A"), ("lom", "B"), ("pul", "C")],
     [("ti", "A"), ("zar", "B"), ("sen", "C")],
