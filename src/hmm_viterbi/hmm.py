@@ -56,13 +56,16 @@ class HiddenMarkovModel:
                  algorithm: str = 'viterbi',
                  smoothing: float = 0.01,
                  rarity_factor: float = 0.05,
-                 imputer=simple_unknown_imputer
+                 imputer=simple_unknown_imputer,
+                 ignore_rarity_guard_rail=False,
                  ):
         """
         :param sentences: List of (word, pos) pairs
         :param algorithm: 'exhaustive' or 'viterbi'
         :param smoothing: Smoothing parameter (interpolation between actual and uniform probabilities). 1 means use actual probabilities; 0 means use uniform probabilities.
         :param rarity_factor: Threshold for rarity of words in the corpus. 0 means all words retained; 1 means all words discarded. There is a hard constraint to retain at least len(counter)**0.5 words.
+        :param imputer: The unknown word handling mechanism.
+        :param ignore_rarity_guard_rail: Analytics helper for rarity_factor. Disables the minimum len(counter)**0.5 criteria.
         """
 
         assert len(sentences) > 0, ""
@@ -85,12 +88,13 @@ class HiddenMarkovModel:
         # Calculate a retention factor to keep only the most common words:
         #   Either keep 100*rarity_factor% of the most common words by logscale
         #   Or at least len(all words) ** 0.5
-        threshold_rank = min(
-            # Any values that occur less than 100rarity_factor% in the corpus
-            len([x for x in counter.values() if np.log(x + 1) <= max_frequency_factor]),
-            # At least pick up some words
-            int(len(counter) - len(counter) ** 0.5)
-        )
+        # Any values that occur less than 100rarity_factor% in the corpus
+        low_rankers = [x for x in counter.values() if np.log(x + 1) <= max_frequency_factor]
+        if len(low_rankers) == 0: low_rankers = [counter.most_common()[-1][1]]
+        side_rank = len([x for x in counter.values() if x < max(low_rankers)])
+        threshold_rank = int(side_rank + (len(low_rankers) - side_rank) * rarity_factor)
+        # At least pick up some words
+        if not ignore_rarity_guard_rail: threshold_rank = min(threshold_rank, int(len(counter) - len(counter) ** 0.5))
         # Use the retention factor to filter out rare words
         self.knowledge = {word for word, freq in counter.most_common()[:(len(counter) - threshold_rank)]}
 
@@ -109,10 +113,12 @@ class HiddenMarkovModel:
 
         # Finalize the HMM architecture
         # *knowledge is what words were known and unique_words is all known words + unknown placeholders*
-        self.unique_words = sorted(list({word for word, pos in list_of_all_pairs}))
         self.unique_pos = sorted(list({pos for word, pos in list_of_all_pairs}))
-        self.n_observations = len(self.unique_words)
         self.n_hidden_states = len(self.unique_pos)
+        self.unique_words = {word for word, pos in list_of_all_pairs}
+        self.unique_words |= {x[0] for x in (self.imputer([(x, x) for x in self.unique_pos], set()))}
+        self.unique_words = sorted(list(self.unique_words))
+        self.n_observations = len(self.unique_words)
 
         # Create some helpers for index<->token conversion
         self.pos_to_idx = {pos: idx for idx, pos in enumerate(self.unique_pos)}

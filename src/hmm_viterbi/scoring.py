@@ -1,6 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+def count_unique_words(corpus: list[list[tuple[str, str]]]):
+    return len({word for sentence in corpus for word, pos in sentence})
+
+
 def micro_accuracy_score(y_true, y_pred):
     return sum(t == p for t, p in zip(y_true, y_pred)) / len(y_true)
 
@@ -78,4 +83,3 @@ def display_confusion_matrix_heatmap(matrix, normalize=True, title="Confusion Ma
     plt.colorbar(im)
     plt.tight_layout()
     plt.show()
-
